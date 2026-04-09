@@ -12,14 +12,14 @@
  * WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
  * AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
- * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+ * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
  * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
 /*
- * ahv_core.c: AHV tender core - Hypervisor.framework integration.
+ * ahv_core.c: AHV tender core - Hypervisor.framework integration with hypercall handling.
  */
 
 #define _GNU_SOURCE
@@ -34,12 +34,38 @@
 #include <time.h>
 #include <mach/mach_time.h>
 #include <inttypes.h>
+#include <unistd.h>
 
 #include <Hypervisor/Hypervisor.h>
 
 #include "ahv.h"
+#include "ahv_abi.h"
+
+#define SOLO5_R_OK 0
+#define SOLO5_R_EINVAL -1
+#define SOLO5_R_EOF -3
+#define SOLO5_R_AGAIN -2
 
 static int hv_available = 0;
+
+static uint64_t get_elr_el2(hv_vcpu_t vcpu)
+{
+    uint64_t elr;
+    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ELR_EL2, &elr);
+    return elr;
+}
+
+static void set_elr_el2(hv_vcpu_t vcpu, uint64_t val)
+{
+    hv_vcpu_set_sys_reg(vcpu, HV_SYS_REG_ELR_EL2, val);
+}
+
+static uint64_t get_esr_el2(hv_vcpu_t vcpu)
+{
+    uint64_t esr;
+    hv_vcpu_get_sys_reg(vcpu, HV_SYS_REG_ESR_EL2, &esr);
+    return esr;
+}
 
 static void check_hv_support(void)
 {
@@ -151,6 +177,105 @@ void ahv_vcpu_init(struct ahv *ahv, uint64_t gpa_ep)
     printf("AHV:   entry point set to GPA 0x%" PRIx64 "\n", gpa_ep);
 }
 
+static void handle_hypercall(struct ahv *ahv, uint64_t hypercall_nr)
+{
+    uint64_t x0, x1, x2, x3, x4, x5, x6, x7;
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X1, &x1);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X2, &x2);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X3, &x3);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X4, &x4);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X5, &x5);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X6, &x6);
+    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X7, &x7);
+
+    switch (hypercall_nr) {
+    case AHV_HYPERCALL_WALLTIME: {
+        struct ahv_hc_walltime *hc = (struct ahv_hc_walltime *)(ahv->mem + x0);
+        hc->nsecs = mach_absolute_time() * (1000000000ULL / ahv->cpu_cycle_freq);
+        printf("  HYPERCALL WALLTIME: nsecs=%llu\n", (unsigned long long)hc->nsecs);
+        break;
+    }
+    case AHV_HYPERCALL_PUTS: {
+        struct ahv_hc_puts *hc = (struct ahv_hc_puts *)(ahv->mem + x0);
+        if (hc->len > 0 && hc->data != 0) {
+            char *str = (char *)(ahv->mem + (uint64_t)hc->data);
+            size_t out_len = hc->len;
+            if (out_len > 256) out_len = 256;
+            printf("  HYPERCALL PUTS: len=%zu, data=", (size_t)hc->len);
+            fwrite(str, 1, out_len, stdout);
+            if (hc->len > out_len) printf("...");
+            printf("\n");
+        }
+        hc->ret = SOLO5_R_OK;
+        break;
+    }
+    case AHV_HYPERCALL_POLL: {
+        struct ahv_hc_poll *hc = (struct ahv_hc_poll *)(ahv->mem + x0);
+        printf("  HYPERCALL POLL: timeout=%llu\n", (unsigned long long)hc->timeout_nsecs);
+        hc->ready_set = 0;
+        hc->ret = SOLO5_R_OK;
+        break;
+    }
+    case AHV_HYPERCALL_BLOCK_WRITE: {
+        printf("  HYPERCALL BLOCK_WRITE\n");
+        struct ahv_hc_block_write *hc = (struct ahv_hc_block_write *)(ahv->mem + x0);
+        hc->ret = SOLO5_R_EINVAL;
+        break;
+    }
+    case AHV_HYPERCALL_BLOCK_READ: {
+        printf("  HYPERCALL BLOCK_READ\n");
+        struct ahv_hc_block_read *hc = (struct ahv_hc_block_read *)(ahv->mem + x0);
+        hc->ret = SOLO5_R_EINVAL;
+        break;
+    }
+    case AHV_HYPERCALL_NET_WRITE: {
+        printf("  HYPERCALL NET_WRITE\n");
+        struct ahv_hc_net_write *hc = (struct ahv_hc_net_write *)(ahv->mem + x0);
+        hc->ret = SOLO5_R_EINVAL;
+        break;
+    }
+    case AHV_HYPERCALL_NET_READ: {
+        printf("  HYPERCALL NET_READ\n");
+        struct ahv_hc_net_read *hc = (struct ahv_hc_net_read *)(ahv->mem + x0);
+        hc->ret = SOLO5_R_EINVAL;
+        break;
+    }
+    case AHV_HYPERCALL_HALT: {
+        struct ahv_hc_halt *hc = (struct ahv_hc_halt *)(ahv->mem + x0);
+        printf("  HYPERCALL HALT: exit_status=%d\n", hc->exit_status);
+        ahv->exit_status = hc->exit_status;
+        return;
+    }
+    default:
+        printf("  UNKNOWN HYPERCALL: %llu\n", (unsigned long long)hypercall_nr);
+        break;
+    }
+
+    uint64_t pc = get_elr_el2(ahv->vcpu);
+    pc += 4;
+    set_elr_el2(ahv->vcpu, pc);
+}
+
+static void handle_data_abort(struct ahv *ahv)
+{
+    uint64_t far;
+    hv_vcpu_get_sys_reg(ahv->vcpu, HV_SYS_REG_FAR_EL2, &far);
+    uint64_t esr = get_esr_el2(ahv->vcpu);
+
+    printf("  Data Abort: FAR=0x%" PRIx64 ", ESR=0x%" PRIx64 "\n", far, esr);
+
+    if (far >= AHV_HYPERCALL_MMIO_BASE) {
+        uint64_t hypercall_nr = AHV_HYPERCALL_NR(far);
+        printf("  Hypercall MMIO access: address=0x%" PRIx64 ", nr=%llu\n",
+               far, (unsigned long long)hypercall_nr);
+        handle_hypercall(ahv, hypercall_nr);
+    } else {
+        printf("  Unknown memory fault at GPA 0x%" PRIx64 "\n", far);
+        printf("  Aborting guest\n");
+    }
+}
+
 void ahv_run(struct ahv *ahv)
 {
     printf("\n=== AHV Tender: Running unikernel ===\n");
@@ -177,6 +302,7 @@ void ahv_run(struct ahv *ahv)
     printf("Starting vCPU...\n");
     printf("========================================================\n\n");
 
+    ahv->exit_status = -1;
     hv_return_t ret;
     while (1) {
         ret = hv_vcpu_run(ahv->vcpu);
@@ -188,23 +314,36 @@ void ahv_run(struct ahv *ahv)
         uint32_t reason = ahv->vcpu_exit->reason;
         printf("vCPU exit: reason=%u\n", reason);
 
-        if (reason == 0xFFFF) {
-            uint64_t pc;
-            hv_vcpu_get_reg(ahv->vcpu, HV_REG_PC, &pc);
-            printf("  PC=0x%" PRIx64 "\n", pc);
-
-            if (pc >= 0x8000 && pc < 0x10000) {
-                uint64_t x0;
-                hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
-                printf("  Hypercall number: %llu\n", (unsigned long long)x0);
-
-                if (x0 == 0) {
-                    printf("  HYPERCALL_EXIT\n");
+        if (reason == 1) {
+            uint64_t esr = get_esr_el2(ahv->vcpu);
+            uint32_t ec = (esr >> 26) & 0x3F;
+            uint32_t iss = esr & 0x1FFFFF;
+            
+            printf("  Exception: EC=0x%x, ISS=0x%x\n", ec, iss);
+            
+            if (ec == 0x25) {
+                handle_data_abort(ahv);
+            } else if (ec == 0x00) {
+                uint64_t pc = get_elr_el2(ahv->vcpu);
+                printf("  Instruction trap at PC=0x%" PRIx64 "\n", pc);
+                
+                if (pc >= AHV_HYPERCALL_MMIO_BASE) {
+                    uint64_t hypercall_nr = AHV_HYPERCALL_NR(pc);
+                    printf("  Hypercall via instruction trap: nr=%llu\n", 
+                           (unsigned long long)hypercall_nr);
+                    handle_hypercall(ahv, hypercall_nr);
+                } else {
+                    printf("  Unknown trap, aborting\n");
                     break;
                 }
+            } else {
+                printf("  Unknown exception class\n");
+                break;
             }
-        } else if (reason == 2) {
-            printf("  Exception\n");
+        } else if (reason == 0xFFFF) {
+            uint64_t pc;
+            hv_vcpu_get_reg(ahv->vcpu, HV_REG_PC, &pc);
+            printf("  Hypercall exit: PC=0x%" PRIx64 "\n", pc);
             break;
         } else {
             printf("  Unknown exit reason\n");
@@ -212,7 +351,7 @@ void ahv_run(struct ahv *ahv)
         }
     }
 
-    printf("\n=== AHV Tender: Halted ===\n");
+    printf("\n=== AHV Tender: Halted with exit_status=%d ===\n", ahv->exit_status);
     hv_vcpu_destroy(ahv->vcpu);
     hv_vm_destroy();
 }

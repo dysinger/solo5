@@ -46,6 +46,7 @@ struct ahv {
     hv_vcpu_t vcpu;
     hv_vcpu_exit_t *vcpu_exit;
     void (*hypercalls[AHV_HYPERCALL_MAX])(struct ahv *ahv, ahv_gpa_t gpa);
+    int exit_status;
 };
 
 struct ahv *ahv_init(size_t mem_size);

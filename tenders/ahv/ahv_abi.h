@@ -32,6 +32,8 @@
 #include <stdint.h>
 
 #define AHV_ABI_VERSION 1
+#define HVT_ABI_VERSION 1
+#define HVT_ABI_TARGET 1
 
 #define AHV_GUEST_MIN_BASE 0x100000
 
@@ -88,6 +90,7 @@ struct ahv_hc_walltime {
 struct ahv_hc_puts {
     AHV_GUEST_PTR(const char *) data;
     size_t len;
+    int ret;
 };
 
 struct ahv_hc_block_write {
