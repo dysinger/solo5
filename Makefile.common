@@ -57,7 +57,7 @@ endef
 #
 HOSTCC := $(CONFIG_HOST_CC)
 HOSTCFLAGS := -fstack-protector-strong -Wall -Wshadow -Wpointer-arith -Wcast-qual -Wsign-compare -Wwrite-strings -Werror -std=c11 -O2 -g
-HOSTCPPFLAGS := -I$(TOPDIR)/include
+HOSTCPPFLAGS := -I$(TOPDIR)/include -isystem /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
 HOSTLDFLAGS :=
 HOSTLDLIBS :=
 HOSTAR := $(CONFIG_HOST_AR)

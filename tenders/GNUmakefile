@@ -28,7 +28,7 @@ all_TARGETS :=
 .SUFFIXES:
 $(V).SILENT:	
 
-ifneq ($(filter 1,$(CONFIG_HVT_TENDER) $(CONFIG_SPT_TENDER)),)
+ifneq ($(filter 1,$(CONFIG_HVT_TENDER) $(CONFIG_SPT_TENDER) $(CONFIG_AHV_TENDER)),)
 
 common_LIB := common/libcommon.a
 common_SRCS := common/elf.c common/mft.c common/block_attach.c \
@@ -117,8 +117,21 @@ endif # CONFIG_SPT_TENDER
 
 all: $(all_TARGETS)
 
-all_OBJS := $(common_OBJS) $(hvt_OBJS) $(hvt_debug_OBJS) $(spt_OBJS)
-all_DEPS := $(patsubst %.o,%.d,$(all_OBJS))
+ifdef CONFIG_AHV_TENDER
+
+ahv_SRCS := ahv/ahv_core.c ahv/ahv_main.c
+ahv_OBJS := $(patsubst %.c,%.o,$(ahv_SRCS))
+
+HOSTLDLIBS += -framework Hypervisor
+
+ahv/solo5-ahv: $(ahv_OBJS)
+	$(HOSTLINK)
+
+all_TARGETS += ahv/solo5-ahv
+
+endif
+
+all_OBJS := $(common_OBJS) $(hvt_OBJS) $(hvt_debug_OBJS) $(spt_OBJS) $(ahv_OBJS)
 
 .PHONY: clean
 
