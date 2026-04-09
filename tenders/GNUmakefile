@@ -124,7 +124,7 @@ ahv_OBJS := $(patsubst %.c,%.o,$(ahv_SRCS))
 
 HOSTLDLIBS += -framework Hypervisor
 
-ahv/solo5-ahv: $(ahv_OBJS)
+ahv/solo5-ahv: $(ahv_OBJS) $(common_LIB)
 	$(HOSTLINK)
 
 all_TARGETS += ahv/solo5-ahv

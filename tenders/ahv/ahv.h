@@ -31,6 +31,10 @@
 
 #include <Hypervisor/Hypervisor.h>
 
+#include "../common/cc.h"
+#include "../common/elf_structs.h"
+#include "../common/mft.h"
+#define AHV_HOST
 #include "ahv_abi.h"
 
 struct ahv {
@@ -41,6 +45,7 @@ struct ahv {
     uint64_t gpa_ep;
     hv_vcpu_t vcpu;
     hv_vcpu_exit_t *vcpu_exit;
+    void (*hypercalls[AHV_HYPERCALL_MAX])(struct ahv *ahv, ahv_gpa_t gpa);
 };
 
 struct ahv *ahv_init(size_t mem_size);
@@ -49,5 +54,19 @@ void ahv_boot_info_init(struct ahv *ahv, uint64_t p_end, int cmdline_argc,
                          char **cmdline_argv);
 void ahv_vcpu_init(struct ahv *ahv, uint64_t gpa_ep);
 void ahv_run(struct ahv *ahv);
+
+struct ahv_module {
+    const char *name;
+    struct {
+        int (*setup)(struct ahv *ahv, struct mft *mft);
+        int (*handle_cmdarg)(char *cmdarg, struct mft *mft);
+        const char *(*usage)(void);
+    } ops;
+};
+
+#define DECLARE_MODULE(module_name, ...)                                       \
+    static struct ahv_module __module_##module_name                            \
+        __attribute((section("modules"), aligned(8)))                          \
+        __attribute((used)) = {.name = #module_name, .ops = {__VA_ARGS__}};
 
 #endif /* AHV_H */

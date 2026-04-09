@@ -28,7 +28,6 @@
 #define _GNU_SOURCE
 #include <assert.h>
 #include <err.h>
-#include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -43,6 +42,7 @@
 #include <unistd.h>
 
 #include "cc.h"
+#include "elf_structs.h"
 #include "elf.h"
 
 /*

@@ -146,7 +146,6 @@ void ahv_vcpu_init(struct ahv *ahv, uint64_t gpa_ep)
     }
 
     ahv->gpa_ep = gpa_ep;
-    ahv->vcpu = (hv_vcpu_t)gpa_ep;
 
     printf("AHV: vCPU created and initialized\n");
     printf("AHV:   entry point set to GPA 0x%" PRIx64 "\n", gpa_ep);

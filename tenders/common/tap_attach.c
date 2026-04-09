@@ -53,7 +53,11 @@
 #include <sys/socket.h>
 #include <net/if.h>
 
-#else /* !__linux__ && !__FreeBSD__ && !__OpenBSD__ */
+#elif defined(__APPLE__)
+
+#include <net/if.h>
+
+#else /* !__linux__ && !__FreeBSD__ && !__OpenBSD__ && !__APPLE__ */
 
 #error Unsupported target
 
@@ -176,6 +180,20 @@ int tap_attach(const char *ifname, int *mtu)
         return -1;
 
 #elif defined(__OpenBSD__)
+
+    if (!up) {
+        errno = ENETDOWN;
+        return -1;
+    }
+
+    char devname[strlen(ifname) + 6];
+
+    snprintf(devname, sizeof devname, "/dev/%s", ifname);
+    fd = open(devname, O_RDWR | O_NONBLOCK);
+    if (fd == -1)
+        return -1;
+
+#elif defined(__APPLE__)
 
     if (!up) {
         errno = ENETDOWN;
