@@ -12,8 +12,8 @@
  * WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
  * AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
- * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
  * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
@@ -58,6 +58,9 @@
 #define ELFDATA2LSB 1
 
 #define PT_LOAD     1
+#define PF_X        1
+#define PF_W        2
+#define PF_R        4
 
 typedef struct {
     uint32_t p_type;
@@ -94,13 +97,11 @@ static void usage(const char *prog)
     exit(1);
 }
 
-static void validate_elf64(int fd, const char *filename, uint64_t *entry, uint64_t *end)
+static void load_elf64(struct ahv *ahv, int fd, const char *filename, 
+                        uint64_t *entry, uint64_t *end)
 {
-    struct stat st;
-    if (fstat(fd, &st) == -1)
-        err(1, "fstat %s", filename);
-
-    char buf[64];
+    char buf[128];
+    
     if (read(fd, buf, sizeof(buf)) != sizeof(buf))
         errx(1, "%s: read error", filename);
 
@@ -116,24 +117,52 @@ static void validate_elf64(int fd, const char *filename, uint64_t *entry, uint64
 
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)buf;
     *entry = ehdr->e_entry;
+    
+    printf("ELF: entry=0x%" PRIx64 "\n", *entry);
 
-    *end = 0;
     lseek(fd, 0, SEEK_SET);
 
-    Elf64_Phdr phdr;
+    char phdr_buf[sizeof(Elf64_Phdr)];
+    *end = 0;
+    
     for (int i = 0; i < ehdr->e_phnum; i++) {
         if (lseek(fd, ehdr->e_phoff + (uint64_t)i * ehdr->e_phentsize, SEEK_SET) == -1)
             err(1, "lseek");
-        if (read(fd, &phdr, sizeof(phdr)) != sizeof(phdr))
+        if (read(fd, phdr_buf, ehdr->e_phentsize) != ehdr->e_phentsize)
             err(1, "read phdr");
-        if (phdr.p_type == PT_LOAD) {
-            uint64_t seg_end = phdr.p_vaddr + phdr.p_memsz;
-            if (seg_end > *end)
-                *end = seg_end;
+        
+        Elf64_Phdr *phdr = (Elf64_Phdr *)phdr_buf;
+        if (phdr->p_type != PT_LOAD)
+            continue;
+
+        uint64_t vaddr = phdr->p_vaddr;
+        uint64_t memsz = phdr->p_memsz;
+        uint64_t filesz = phdr->p_filesz;
+        
+        printf("ELF: Loading segment: vaddr=0x%" PRIx64 ", filesz=%" PRIu64 ", memsz=%" PRIu64 "\n",
+               vaddr, filesz, memsz);
+
+        if (vaddr + memsz > ahv->mem_size)
+            errx(1, "Segment extends beyond guest memory");
+
+        if (memsz > 0) {
+            memset(ahv->mem + vaddr, 0, memsz);
         }
+        
+        if (filesz > 0) {
+            if (lseek(fd, phdr->p_offset, SEEK_SET) == -1)
+                err(1, "lseek");
+            ssize_t r = read(fd, ahv->mem + vaddr, filesz);
+            if (r != filesz)
+                errx(1, "Failed to read segment data");
+        }
+
+        uint64_t seg_end = vaddr + memsz;
+        if (seg_end > *end)
+            *end = seg_end;
     }
 
-    printf("ELF: entry=0x%" PRIx64 ", end=0x%" PRIx64 "\n", *entry, *end);
+    printf("ELF: Loaded, end=0x%" PRIx64 "\n", *end);
 }
 
 int main(int argc, char **argv)
@@ -161,7 +190,7 @@ int main(int argc, char **argv)
 
     struct ahv *ahv = ahv_init(mem_size);
 
-    validate_elf64(elf_fd, elf_filename, &p_entry, &p_end);
+    load_elf64(ahv, elf_fd, elf_filename, &p_entry, &p_end);
     close(elf_fd);
 
     ahv_boot_info_init(ahv, p_end, 0, NULL);

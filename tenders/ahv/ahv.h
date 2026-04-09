@@ -12,8 +12,8 @@
  * WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
  * AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
- * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
  * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
@@ -29,6 +29,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include <Hypervisor/Hypervisor.h>
+
 #include "ahv_abi.h"
 
 struct ahv {
@@ -36,8 +38,9 @@ struct ahv {
     size_t mem_size;
     uint64_t cpu_cycle_freq;
     uint64_t cpu_boot_info_base;
-    void *vcpu;
-    void *vm;
+    uint64_t gpa_ep;
+    hv_vcpu_t vcpu;
+    hv_vcpu_exit_t *vcpu_exit;
 };
 
 struct ahv *ahv_init(size_t mem_size);
