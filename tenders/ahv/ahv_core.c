@@ -689,11 +689,9 @@ void ahv_run(struct ahv *ahv)
                 ahv->exit_status = (int)rx0;
                 goto done;
             } else if (hc_nr == 4 || hc_nr == 5) {
-                hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
-                handle_hypercall(ahv, hc_nr, x0);
+                handle_hypercall(ahv, hc_nr, rx0);
             } else if (hc_nr == 6 || hc_nr == 7) {
-                hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
-                handle_hypercall(ahv, hc_nr, x0);
+                handle_hypercall(ahv, hc_nr, rx0);
             } else {
                 ahv->exit_status = 0;
             }
