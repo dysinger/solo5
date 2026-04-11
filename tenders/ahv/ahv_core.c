@@ -822,6 +822,8 @@ void ahv_run(struct ahv *ahv)
     }
     
 done:
+    printf("\n=== Exited: status=%d, iterations=%d ===\n", ahv->exit_status, iter);
+    
     if (block_fd >= 0)
         close(block_fd);
     if (net_fd >= 0)
