@@ -725,6 +725,8 @@ void ahv_run(struct ahv *ahv)
                 goto done;
             }
         } else if (ec == 0x25 && far >= AHV_HYPERCALL_MMIO_BASE) {
+            uint64_t x0;
+            hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
             uint64_t hc_nr = AHV_HYPERCALL_NR(far);
             handle_hypercall(ahv, hc_nr, x0);
         } else if (ec == 0x18 || ec == 0x19) {
