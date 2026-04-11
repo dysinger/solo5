@@ -378,58 +378,22 @@ void ahv_vcpu_init(struct ahv *ahv, uint64_t gpa_ep)
 static void handle_hypercall(struct ahv *ahv, uint64_t hypercall_nr, uint64_t x0_arg)
 {
     uint64_t x0 = x0_arg;
-    printf("handle_hypercall: nr=%llu X0=0x%llx (from arg)\n", (unsigned long long)hypercall_nr, (unsigned long long)x0);
-    
-    const char *hc_name = "UNKNOWN";
-    switch (hypercall_nr) {
-        case 1: hc_name = "WALLTIME"; break;
-        case 2: hc_name = "PUTS"; break;
-        case 3: hc_name = "POLL"; break;
-        case 4: hc_name = "BLOCK_WRITE"; break;
-        case 5: hc_name = "BLOCK_READ"; break;
-        case 6: hc_name = "NET_WRITE"; break;
-        case 7: hc_name = "NET_READ"; break;
-        case 8: hc_name = "HALT"; break;
-    }
-    printf("AHV: Hypercall %llu %s (X0=0x%" PRIx64 ")\n", 
-           (unsigned long long)hypercall_nr, hc_name, x0);
-    fflush(stdout);
-    
     uint64_t gpa = x0;
-    printf("    Hypercall struct at GPA 0x%" PRIx64 "\n", gpa);
     
     switch (hypercall_nr) {
     case AHV_HYPERCALL_WALLTIME: {
-        printf("  HYPERCALL WALLTIME\n");
-        fflush(stdout);
         struct ahv_hc_walltime *hc = (struct ahv_hc_walltime *)(ahv->mem + x0);
-        hc->nsecs = 0;  // Would use mach_absolute_time() in production
+        hc->nsecs = 0;
         break;
     }
     case AHV_HYPERCALL_PUTS: {
-        printf("HYPERCALL PUTS\n");
-        fflush(stdout);
         struct ahv_hc_puts *hc = (struct ahv_hc_puts *)(ahv->mem + x0);
-        uint64_t data_ptr = hc->data;
-        
-        printf("  data_ptr=0x%" PRIx64 ", len=%zu\n", data_ptr, hc->len);
-        fflush(stdout);
-        
-        if (hc->len > 0 && data_ptr < ahv->mem_size && data_ptr >= 0x100000) {
-            char *str = (char *)(ahv->mem + data_ptr);
-            printf("GUEST: ");
-            fwrite(str, 1, hc->len, stdout);
-            printf("\n");
-            fflush(stdout);
-        }
         hc->ret = hc->len;
         break;
     }
 case AHV_HYPERCALL_POLL: {
         struct ahv_hc_poll *hc = (struct ahv_hc_poll *)(ahv->mem + x0);
-        // POLL checks network socket: first try to accept, then check for data
         if (net_listen_fd >= 0) {
-            // Poll listen socket non-blocking to see if connection pending
             struct pollfd lpfd;
             lpfd.fd = net_listen_fd;
             lpfd.events = POLLIN;
@@ -437,7 +401,6 @@ case AHV_HYPERCALL_POLL: {
             poll(&lpfd, 1, 0);
             
             if (lpfd.revents & POLLIN) {
-                // Connection waiting - accept it
                 int new_fd = accept(net_listen_fd, NULL, NULL);
                 if (new_fd >= 0) {
                     if (net_fd >= 0) close(net_fd);
@@ -446,7 +409,6 @@ case AHV_HYPERCALL_POLL: {
             }
         }
         
-        // Now check connected socket
         if (net_fd >= 0) {
             struct pollfd pfd;
             pfd.fd = net_fd;
@@ -473,11 +435,9 @@ case AHV_HYPERCALL_POLL: {
         break;
     }
     case AHV_HYPERCALL_BLOCK_WRITE: {
-        printf("  HYPERCALL BLOCK_WRITE\n");
         struct ahv_hc_block_write *hc = (struct ahv_hc_block_write *)(ahv->mem + x0);
         
         if (block_fd < 0) {
-            printf("    No block device configured (set AHV_BLOCK_DEVICE)\n");
             hc->ret = SOLO5_R_EUNSPEC;
         } else if (hc->handle != 0) {
             hc->ret = SOLO5_R_EINVAL;
@@ -487,12 +447,10 @@ case AHV_HYPERCALL_POLL: {
                 hc->offset + hc->len > (uint64_t)block_size) {
                 hc->ret = SOLO5_R_EINVAL;
             } else {
-                // Actually do the write
                 lseek(block_fd, hc->offset, SEEK_SET);
                 ssize_t written = write(block_fd, ahv->mem + data_ptr, hc->len);
                 if (written == (ssize_t)hc->len) {
                     hc->ret = 0;
-                    printf("    Wrote %zu bytes to block device\n", hc->len);
                 } else {
                     hc->ret = SOLO5_R_EUNSPEC;
                 }
@@ -501,11 +459,9 @@ case AHV_HYPERCALL_POLL: {
         break;
     }
     case AHV_HYPERCALL_BLOCK_READ: {
-        printf("  HYPERCALL BLOCK_READ\n");
         struct ahv_hc_block_read *hc = (struct ahv_hc_block_read *)(ahv->mem + x0);
         
         if (block_fd < 0) {
-            printf("    No block device configured\n");
             hc->ret = SOLO5_R_EUNSPEC;
         } else if (hc->handle != 0) {
             hc->ret = SOLO5_R_EINVAL;
@@ -519,7 +475,6 @@ case AHV_HYPERCALL_POLL: {
                 ssize_t r = read(block_fd, ahv->mem + data_ptr, hc->len);
                 if (r == (ssize_t)hc->len) {
                     hc->ret = 0;
-                    printf("    Read %zu bytes from block device\n", hc->len);
                 } else {
                     hc->ret = SOLO5_R_EUNSPEC;
                 }
@@ -605,17 +560,11 @@ case AHV_HYPERCALL_POLL: {
         break;
     }
     case AHV_HYPERCALL_HALT: {
-        printf("  HYPERCALL HALT\n");
-        fflush(stdout);
         struct ahv_hc_halt *hc = (struct ahv_hc_halt *)(ahv->mem + x0);
-        printf("    exit_status=%d, cookie=%p\n", hc->exit_status, (void*)hc->cookie);
-        fflush(stdout);
         ahv->exit_status = hc->exit_status;
-        printf("AHV: Unikernel requested halt with status %d\n", hc->exit_status);
         break;
     }
     default:
-        printf("  UNKNOWN HYPERCALL: %llu\n", (unsigned long long)hypercall_nr);
         break;
     }
 
@@ -633,22 +582,10 @@ static void handle_data_abort(struct ahv *ahv)
     uint64_t x0;
     hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
     
-    printf("AHV: Data Abort: FAR=0x%" PRIx64 ", ESR=0x%" PRIx64 "\n", far, esr);
-    fflush(stdout);
-    
-    // Check if this is a hypercall (MMIO access to hypercall region)
-    // The hypercall region is at 0x100000000+
     if (far >= AHV_HYPERCALL_MMIO_BASE) {
         uint64_t hypercall_nr = AHV_HYPERCALL_NR(far);
-        printf("AHV: -> Hypercall MMIO access: address=0x%" PRIx64 ", nr=%llu\n",
-               far, (unsigned long long)hypercall_nr);
-        fflush(stdout);
         handle_hypercall(ahv, hypercall_nr, x0);
     } else {
-        printf("AHV: Unknown memory fault at GPA 0x%" PRIx64 "\n", far);
-        fflush(stdout);
-        
-        // For now, halt on unknown faults
         ahv->exit_status = 1;
     }
 }
@@ -722,21 +659,8 @@ static void *timeout_thread_30s(void *arg) {
 
 void ahv_run(struct ahv *ahv)
 {
-    printf("=== AHV Tender: Running unikernel (v20) ===\n");
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
-    
-    printf("AHV: Starting vCPU loop\n");
-    fflush(stdout);
-    
-    // Use hv_vcpu_run - on Apple Silicon blocks until VMexit
-    // NOTE: Timer causes early exit due to hv_vcpus_exit resetting guest state
-    // pthread_t timer_tid;
-    // pthread_create(&timer_tid, NULL, timeout_thread_30s, (void*)ahv->vcpu);
-    // printf("Added timer thread to trigger exit\n");
-    
-    printf("AHV: Calling hv_vcpu_run (will block until exception)...\n");
-    fflush(stdout);
     
     hv_return_t r;
     uint32_t reason;
@@ -744,27 +668,8 @@ void ahv_run(struct ahv *ahv)
     r = hv_vcpu_run(ahv->vcpu);
     reason = ahv->vcpu_exit->reason;
     
-    // ALWAYS print reason on first return
-    printf("AHV: hv_vcpu_run returned r=%d reason=%u\n", (int)r, reason);
-    if (reason == 1) {
-        uint64_t esr = get_esr_el1(ahv->vcpu);
-        uint32_t ec = (esr >> 26) & 0x3F;
-        printf("AHV: Exception: EC=0x%x ESR=0x%" PRIx64 "\n", ec, esr);
-    }
-    fflush(stdout);
-    uint64_t pc, x0, x1;
-    hv_vcpu_get_reg(ahv->vcpu, HV_REG_PC, &pc);
-    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
-    hv_vcpu_get_reg(ahv->vcpu, HV_REG_X1, &x1);
-    printf("AHV: vCPU run completed r=%d reason=%u PC=0x%" PRIx64 " X0=0x%" PRIx64 " X1=0x%" PRIx64 "\n", 
-           (int)r, reason, pc, x0, x1);
-    fflush(stdout);
-    
-    // Handle the result (hypercall, exception, etc.)
     if (reason == 0) {
-        printf("AHV: vCPU canceled (external signal)\n");
     } else if (reason == 1) {
-        // Exception - may be hypercall
         uint64_t esr = get_esr_el1(ahv->vcpu);
         uint32_t ec = (esr >> 26) & 0x3F;
         uint64_t far;
@@ -772,137 +677,73 @@ void ahv_run(struct ahv *ahv)
         uint64_t pc;
         hv_vcpu_get_reg(ahv->vcpu, HV_REG_PC, &pc);
         
-        printf("AHV: Exception after first run: EC=0x%x ESR=0x%" PRIx64 " FAR=0x%" PRIx64 " PC=0x%" PRIx64 "\n", 
-               ec, esr, far, pc);
-        
-// Handle EC=0x0 - HVC exception (no ESR set)
         if (ec == 0x0) {
-            // Get registers for EC=0x0 path
             uint64_t rx0, rx1, rx2;
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &rx0);
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X1, &rx1);
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X2, &rx2);
             
-            // X2 = hypercall number
             uint64_t hc_nr = rx2;
-            printf("AHV: Hypercall nr=%llu X0=%llu X1=%llu\n", 
-                   (unsigned long long)hc_nr, (unsigned long long)x0, (unsigned long long)x1);
             
-            if (hc_nr == 5) {
-                // PUTS: rx0=len, rx1=gpa of string
-                uint64_t offset = rx1 - GUEST_MMAP_BASE;
-                if (offset < ahv->mem_size && rx0 > 0) {
-                    char *msg = (char *)(ahv->mem + offset);
-                    printf("AHV: >>>%s<<<\n", msg);
-                }
-                // DON'T set exit_status - continue loop for more hypercalls!
-            } else if (hc_nr == 2) {
-                // PUTS - print from guest memory
-                uint64_t offset = rx1 - GUEST_MMAP_BASE;
-                if (offset < ahv->mem_size && rx0 > 0) {
-                    char *msg = (char *)(ahv->mem + offset);
-                    printf("AHV: >>>%s<<<\n", msg);
-                }
-            } else if (hc_nr == 11) {
-                // HALT
-                printf("AHV: HALT code=%llu\n", (unsigned long long)rx0);
+            if (hc_nr == 11) {
                 ahv->exit_status = (int)rx0;
-                printf("AHV: Early exit, status=%d\n", ahv->exit_status);
                 goto done;
             } else if (hc_nr == 4 || hc_nr == 5) {
-                // BLOCK_WRITE (4) or BLOCK_READ (5) - handle now
-                printf("AHV: BLOCK_%s handled\n", hc_nr == 4 ? "WRITE" : "READ");
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
                 handle_hypercall(ahv, hc_nr, x0);
             } else if (hc_nr == 6 || hc_nr == 7) {
-                // NET_WRITE (6) or NET_READ (7) - handle now  
-                printf("AHV: NET_%s handled\n", hc_nr == 6 ? "WRITE" : "READ");
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
                 handle_hypercall(ahv, hc_nr, x0);
-                // Continue loop - don't exit
             } else {
-                printf("AHV: Unknown hypercall %llu, exiting\n", (unsigned long long)hc_nr);
                 ahv->exit_status = 0;
             }
             
-            // Advance PC past HVC instruction
             hv_vcpu_set_reg(ahv->vcpu, HV_REG_PC, pc + 4);
             
-            // Check if HALT was called
             if (ahv->exit_status >= 0) {
-                printf("AHV: Early exit after first run, status=%d\n", ahv->exit_status);
                 goto done;
             }
         } else if (ec == 0x16) {
-            // HVC exception - hypercall
             uint64_t x0, x1, x2;
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X1, &x1);
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X2, &x2);
-            printf("AHV: HVC hypercall: X0=%llu X1=%llu X2=%llu\n", 
-                   (unsigned long long)x0, (unsigned long long)x1, (unsigned long long)x2);
             
-            // X2 = hypercall number, X1 = arg (from ADR)
             uint64_t hc_nr = x2;
             uint64_t hc_arg = x1;
             
-            // Simple raw hypercall handling
-            if (hc_nr == 5) {
-                // PUTS - print from guest memory
-                char *msg = (char *)(ahv->mem + pc + 8);
-                printf("AHV: PUTS: %s", msg);
-                // Don't exit - continue for more hypercalls
-            } else if (hc_nr == 7 || hc_nr == 8) {
-                // BLOCK_WRITE/BLOCK_READ - call handler
-                printf("AHV: Early handler: BLOCK_%s\n", hc_nr == 7 ? "WRITE" : "READ");
+            if (hc_nr == 7 || hc_nr == 8) {
                 handle_hypercall(ahv, hc_nr, x0);
             } else if (hc_nr == 9 || hc_nr == 10) {
-                // NET_WRITE/NET_READ - call handler
-                printf("AHV: Early handler: NET_%s\n", hc_nr == 9 ? "WRITE" : "READ");
                 handle_hypercall(ahv, hc_nr, x0);
             } else if (hc_nr == 11) {
-                // HALT
-                printf("AHV: HALT (code=%llu)\n", (unsigned long long)hc_arg);
                 ahv->exit_status = (int)hc_arg;
             } else {
-                printf("AHV: Unknown raw hypercall %llu\n", (unsigned long long)hc_nr);
                 ahv->exit_status = 0;
             }
-            // Advance PC past HVC instruction
             hv_vcpu_set_reg(ahv->vcpu, HV_REG_PC, pc + 4);
             
             if (ahv->exit_status >= 0) {
-                printf("AHV: Early exit after ec==0x16, status=%d\n", ahv->exit_status);
                 goto done;
             }
         } else if (ec == 0x25 && far >= AHV_HYPERCALL_MMIO_BASE) {
             uint64_t hc_nr = AHV_HYPERCALL_NR(far);
-            printf("AHV: Hypercall detected: nr=%llu\n", (unsigned long long)hc_nr);
             handle_hypercall(ahv, hc_nr, x0);
         } else if (ec == 0x18 || ec == 0x19) {
-            printf("AHV: Timer interrupt - continuing\n");
         } else {
-            printf("AHV: Unknown exception type, exiting\n");
             ahv->exit_status = 1;
         }
     } else if (reason == 2) {
-        printf("AHV: vTimer interrupt\n");
     }
-    fflush(stdout);
     
-    // Continue loop for more hypercalls/exceptions
     int iter = 1;
     while (ahv->exit_status < 0 && iter < 100000) {
         r = hv_vcpu_run(ahv->vcpu);
         reason = ahv->vcpu_exit->reason;
         
-        if (iter < 5) {
-            printf("AHV: iter=%d r=%d reason=%u\n", iter, (int)r, reason);
-            fflush(stdout);
-        }
-        
+        if (iter < 5) {}
+
         if (reason == 0) {
-            printf("AHV: vCPU canceled at iter=%d\n", iter);
             break;
         }
         
@@ -924,25 +765,12 @@ void ahv_run(struct ahv *ahv)
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X2, &x2);
             hv_vcpu_get_reg(ahv->vcpu, HV_REG_X3, &x3);
             
-            printf("AHV: Exception at iter=%d: EC=0x%x ESR=0x%" PRIx64 " FAR=0x%" PRIx64 " PC=0x%" PRIx64 "\n", 
-                   iter, ec, esr, far, pc);
-            printf("AHV:   X0=0x%" PRIx64 " X1=0x%" PRIx64 " X2=0x%" PRIx64 " X3=0x%" PRIx64 "\n",
-                   x0, x1, x2, x3);
-            
-            // Always continue (don't exit) except for fatal errors
-            printf("AHV: Handling exception, continuing...\n");
-            fflush(stdout);
-            
             if (ec == 0x16) {
-                // HVC (Hypervisor Call) - hypercall nr in X2
-                printf("AHV: HVC hypercall at iter=%d\n", iter);
                 uint64_t x0 = 0, x2 = 0;
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X2, &x2);
-                printf("AHV: HVC: X0=0x%" PRIx64 " X2=%llu\n", x0, (unsigned long long)x2);
                 handle_hypercall(ahv, x2, x0);
                 if (ahv->exit_status >= 0) {
-                    printf("AHV: Exit requested, breaking loop\n");
                     break;
                 }
                 iter++;
@@ -950,67 +778,39 @@ void ahv_run(struct ahv *ahv)
             }
             
             if (ec == 0x0) {
-                // HVC exception - hypercall number in X2, struct address in X1 (from ADR instruction)
                 uint64_t x0, x1, x2;
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X0, &x0);
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X1, &x1);
                 hv_vcpu_get_reg(ahv->vcpu, HV_REG_X2, &x2);
-                // Use X2 for hypercall number, X1 for struct address (ADR loads into X1)
                 uint64_t hc_nr = x2;
-                uint64_t hc_arg = x1;  // Use X1 from ADR
-                printf("AHV: EC=0x0 at iter=%d: X0=%llu X1=%llu X2=%llu\n", iter, (unsigned long long)x0, (unsigned long long)x1, (unsigned long long)x2);
+                uint64_t hc_arg = x1;
                 
                 if (hc_nr == 11) {
-                    // HALT
-                    printf("AHV: HALT code=%llu\n", (unsigned long long)hc_arg);
                     ahv->exit_status = (int)hc_arg;
-                    printf("AHV: Exit requested, breaking loop\n");
                     break;
                 }
                 
-                // Handle other hypercalls via handle_hypercall
                 handle_hypercall(ahv, hc_nr, hc_arg);
                 if (ahv->exit_status >= 0) {
-                    printf("AHV: Exit requested, breaking loop\n");
                     break;
                 }
                 iter++;
                 continue;
             }
-            
+
             if (ec == 0x18 || ec == 0x19) {
-                // Timer interrupt - continue
                 iter++;
                 continue;
             }
             
-            if (ec == 0x20 || ec == 0x21) {
-                // Instruction abort
-                iter++;
-                continue;
-            }
-            
-            if (ec == 0x25) {
-                // Data abort - handle hypercall if in range
-                if (far >= AHV_HYPERCALL_MMIO_BASE) {
-                    uint64_t hc_nr = AHV_HYPERCALL_NR(far);
-                    printf("AHV: Handling hypercall nr=%llu at iter=%d\n", (unsigned long long)hc_nr, iter);
-                    handle_hypercall(ahv, hc_nr, x0);
-                    printf("AHV: Hypercall handled, exit_status=%d\n", ahv->exit_status);
-                    if (ahv->exit_status >= 0) {
-                        printf("AHV: Exit requested, breaking loop\n");
-                        break;
-                    }
-                } else if (far >= 0x100000 && far < ahv->mem_size) {
-                    // Normal memory access fault - continue
-                    printf("AHV: Memory fault at valid address 0x%" PRIx64 ", continuing\n", far);
-                } else {
-                    // Invalid address
-                    printf("AHV: Invalid memory access at FAR=0x%" PRIx64 "\n", far);
+            if (ec == 0x25 && far >= AHV_HYPERCALL_MMIO_BASE) {
+                uint64_t hc_nr = AHV_HYPERCALL_NR(far);
+                handle_hypercall(ahv, hc_nr, x0);
+                if (ahv->exit_status >= 0) {
+                    break;
                 }
             }
             
-            // Continue running
             iter++;
             continue;
         }
@@ -1018,11 +818,13 @@ void ahv_run(struct ahv *ahv)
         iter++;
     }
     
-    done:
-    printf("\n=== Exited: status=%d, iterations=%d ===\n", ahv->exit_status, iter);
-    
+done:
     if (block_fd >= 0)
         close(block_fd);
+    if (net_fd >= 0)
+        close(net_fd);
+    if (net_listen_fd >= 0 && net_listen_fd != net_fd)
+        close(net_listen_fd);
     
     free(ahv);
 }
