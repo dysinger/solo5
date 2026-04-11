@@ -52,7 +52,7 @@ struct ahv {
 struct ahv *ahv_init(size_t mem_size);
 void ahv_mem_size(size_t *mem_size);
 void ahv_boot_info_init(struct ahv *ahv, uint64_t p_end, int cmdline_argc,
-                         char **cmdline_argv);
+                         char **cmdline_argv, const struct mft *mft);
 void ahv_vcpu_init(struct ahv *ahv, uint64_t gpa_ep);
 void ahv_run(struct ahv *ahv);
 
@@ -67,7 +67,7 @@ struct ahv_module {
 
 #define DECLARE_MODULE(module_name, ...)                                       \
     static struct ahv_module __module_##module_name                            \
-        __attribute((section("modules"), aligned(8)))                          \
+        __attribute((section("__TEXT,modules"), aligned(8)))                  \
         __attribute((used)) = {.name = #module_name, .ops = {__VA_ARGS__}};
 
 #endif /* AHV_H */

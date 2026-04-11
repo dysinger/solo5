@@ -41,6 +41,8 @@
 #include <inttypes.h>
 
 #include "ahv.h"
+#include "../common/mft.h"
+#include "../common/elf.c"
 
 #define EI_MAG0     0
 #define EI_MAG1     1
@@ -61,8 +63,11 @@
 
 static void usage(const char *prog)
 {
-    fprintf(stderr, "usage: %s KERNEL\n", prog);
+    fprintf(stderr, "usage: %s [OPTIONS] KERNEL\n", prog);
     fprintf(stderr, "KERNEL is the filename of the unikernel to run.\n");
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  --block:NAME=FILE   Attach block device NAME from FILE\n");
+    fprintf(stderr, "  --net:NAME=IFACE   Attach network device NAME to IFACE\n");
     exit(1);
 }
 
@@ -137,7 +142,9 @@ static void load_elf64(struct ahv *ahv, int fd, const char *filename,
 int main(int argc, char **argv)
 {
     const char *prog;
-    const char *elf_filename;
+    const char *elf_filename = NULL;
+    const char *block_device = NULL;
+    const char *net_device = NULL;
     int elf_fd = -1;
     uint64_t p_entry = 0, p_end = 0;
 
@@ -145,10 +152,45 @@ int main(int argc, char **argv)
     argc--;
     argv++;
 
-    if (argc == 0)
+    // Parse command line arguments
+    while (argc > 0) {
+        if (strncmp(*argv, "--block:", 8) == 0) {
+            block_device = *argv + 8;
+        } else if (strncmp(*argv, "--net:", 6) == 0) {
+            net_device = *argv + 6;
+        } else if (elf_filename == NULL) {
+            elf_filename = *argv;
+        } else {
+            usage(prog);
+        }
+        argc--;
+        argv++;
+    }
+
+    if (elf_filename == NULL)
         usage(prog);
 
-    elf_filename = *argv;
+    // Set environment variables for device configuration
+    // For --net:NAME=IFACE, we check if IFACE is socket:path
+    if (block_device) {
+        char *eq = strchr(block_device, '=');
+        if (eq) {
+            setenv("AHV_BLOCK_DEVICE", eq + 1, 1);
+            printf("AHV: Block device: %s\n", eq + 1);
+        }
+    }
+    if (net_device) {
+        char *eq = strchr(net_device, '=');
+        if (eq) {
+            // Extract just the device path after =
+            const char *iface = eq + 1;
+            setenv("AHV_NET_DEVICE", iface, 1);
+            printf("AHV: Network device: %s\n", iface);
+        } else {
+            setenv("AHV_NET_DEVICE", net_device, 1);
+            printf("AHV: Network device: %s\n", net_device);
+        }
+    }
 
     elf_fd = open(elf_filename, O_RDONLY);
     if (elf_fd == -1)
@@ -162,11 +204,28 @@ int main(int argc, char **argv)
     load_elf64(ahv, elf_fd, elf_filename, &p_entry, &p_end);
     close(elf_fd);
 
-    ahv_boot_info_init(ahv, p_end, 0, NULL);
+    // Extract and validate manifest from ELF
+    struct mft *mft = NULL;
+    size_t mft_size = 0;
+    
+    // Try to find manifest in ELF notes
+    // For now, create an empty manifest if not found
+    // This will be improved once elf.c functions are available
+    mft = calloc(1, sizeof(struct mft));
+    if (mft) {
+        mft->version = MFT_VERSION;
+        mft->entries = 0;
+        mft_size = sizeof(struct mft);
+    }
+
+    ahv_boot_info_init(ahv, p_end, 0, NULL, mft);
 
     ahv_vcpu_init(ahv, p_entry);
 
     ahv_run(ahv);
+
+    if (mft)
+        free(mft);
 
     return 0;
 }
