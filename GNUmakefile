@@ -37,10 +37,14 @@ tests: bindings elftool
 
 .PHONY: build
 ifdef CONFIG_DISABLE_TOOLCHAIN
-build: elftool tenders
+build: elftool
 else
 ifdef CONFIG_DISABLE_BINDINGS
+ifeq ($(CONFIG_HOST),darwin)
+build: elftool toolchain
+else
 build: elftool toolchain tenders
+endif
 else
 build: $(SUBDIRS)
 endif
@@ -177,10 +181,13 @@ ifdef CONFIG_XEN
 endif
 
 .PHONY: install-tenders
-install-tenders: MAKECMDGOALS :=
+install-tenders: MAKECLRGOALS :=
 install-tenders: build
 	@echo INSTALL tenders
 	mkdir -p $(D)/bin
+ifdef CONFIG_DISABLE_BINDINGS
+	@echo "SKIP tenders (disabled via --disable-bindings)"
+else
 ifdef CONFIG_HVT_TENDER
 	$(INSTALL) tenders/hvt/solo5-hvt $(D)/bin
 	- [ -f tenders/hvt/solo5-hvt-debug ] && \
@@ -188,6 +195,7 @@ ifdef CONFIG_HVT_TENDER
 endif
 ifdef CONFIG_SPT_TENDER
 	$(INSTALL) tenders/spt/solo5-spt $(D)/bin
+endif
 endif
 
 .PHONY: install
