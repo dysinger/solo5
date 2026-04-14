@@ -1,0 +1,11 @@
+/* Automatically generated, do not edit */
+
+#ifndef __VERSION_H__
+#define __VERSION_H__
+
+#define VERSION "0.10.1"
+#define VERSION_SHORT "0.10.1"
+#define GIT_VERSION "nix-build"
+#define SOLO5_VERSION "0.10.1"
+
+#endif
