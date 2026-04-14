@@ -403,7 +403,7 @@ else
 fi
 TARGET_CC_MACHINE=$(${TARGET_CC} -dumpmachine)
 
-CONFIG_HVT= CONFIG_SPT= CONFIG_VIRTIO= CONFIG_MUEN= CONFIG_XEN=
+CONFIG_HVT= CONFIG_SPT= CONFIG_VIRTIO= CONFIG_MUEN= CONFIG_XEN= CONFIG_AHV=
 case ${TARGET_CC_MACHINE} in
     x86_64-*|amd64-*)
         TARGET_ARCH=x86_64
@@ -413,6 +413,16 @@ case ${TARGET_CC_MACHINE} in
         else
             CONFIG_HVT=1 CONFIG_SPT=1 CONFIG_VIRTIO=1 CONFIG_MUEN=1 CONFIG_XEN=1
         fi
+        ;;
+    aarch64-apple-darwin*|arm64-apple-darwin*)
+        TARGET_ARCH=aarch64
+        TARGET_LD_MAX_PAGE_SIZE=0x1000
+        CONFIG_HVT=1 CONFIG_AHV=1
+        ;;
+    x86_64-apple-darwin*)
+        TARGET_ARCH=x86_64
+        TARGET_LD_MAX_PAGE_SIZE=0x1000
+        CONFIG_HVT=1
         ;;
     aarch64-*)
         TARGET_ARCH=aarch64
