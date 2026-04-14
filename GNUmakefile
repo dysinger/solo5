@@ -24,6 +24,12 @@ include Makefile.common
 SUBDIRS := elftool tenders toolchain bindings tests
 
 bindings: toolchain
+ifdef CONFIG_DISABLE_BINDINGS
+bindings:
+	@echo "SKIP bindings (disabled via --disable-bindings)"
+else
+bindings: toolchain
+endif
 
 tests: bindings elftool
 
@@ -33,7 +39,11 @@ tests: bindings elftool
 ifdef CONFIG_DISABLE_TOOLCHAIN
 build: elftool tenders
 else
+ifdef CONFIG_DISABLE_BINDINGS
+build: elftool toolchain tenders
+else
 build: $(SUBDIRS)
+endif
 endif
 .DEFAULT_GOAL := build
 
