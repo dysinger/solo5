@@ -149,9 +149,8 @@ install-toolchain: build
 	$(INSTALL) -m 0755 toolchain/bin/$(CONFIG_TARGET_TRIPLE)-objcopy $(D)/bin
 	mkdir -p $(TOOLCHAIN_INCDIR) $(TOOLCHAIN_LIBDIR)
 	cd toolchain/include/$(CONFIG_TARGET_TRIPLE) && \
-	    find . -type d -exec mkdir -p "$(TOOLCHAIN_INCDIR)/{}" \; && \
-	    find . -type f -name '*.h' -exec $(INSTALL) -m 0644 \
-	    "{}" "$(TOOLCHAIN_INCDIR)/{}"
+	    for d in $$(find . -type d); do mkdir -p "$(TOOLCHAIN_INCDIR)/$$d"; done && \
+	    for f in $$(find . -type f -name '*.h'); do $(INSTALL) -m 0644 "$$f" "$(TOOLCHAIN_INCDIR)/$$f"; done
 ifdef CONFIG_DISABLE_BINDINGS
 	@echo "SKIP bindings installation (disabled via --disable-bindings)"
 else
@@ -177,10 +176,8 @@ ifdef CONFIG_XEN
 	$(INSTALL) -m 0644 bindings/solo5_xen.o $(TOOLCHAIN_LIBDIR)
 	$(INSTALL) -m 0644 bindings/solo5_xen.lds $(TOOLCHAIN_LIBDIR)
 	cd include/xen && \
-	    find . -type d -exec mkdir -p "$(D)/include/solo5/xen/{}" \;
-	cd include/xen && \
-	    find . -type f -name '*.h' -exec $(INSTALL) -m 0644 \
-	    "{}" "$(D)/include/solo5/xen/{}" \;
+	    for d in $$(find . -type d); do mkdir -p "$(D)/include/solo5/xen/$$d"; done && \
+	    for f in $$(find . -type f -name '*.h'); do $(INSTALL) -m 0644 "$$f" "$(D)/include/solo5/xen/$$f"; done
 endif
 endif
 
