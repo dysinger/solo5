@@ -294,7 +294,7 @@ case ${HOST_CC_MACHINE} in
             echo "#undef HAVE_VMM_H" >tenders/hvt/hvt_openbsd_config.h
         fi
         ;;
-    aarch64-apple-darwin*)
+    aarch64-apple-darwin*|arm64-apple-darwin*)
         CONFIG_HOST_ARCH=aarch64 CONFIG_HOST=darwin
         CONFIG_HVT_TENDER=1
         ;;
