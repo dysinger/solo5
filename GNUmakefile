@@ -151,7 +151,10 @@ install-toolchain: build
 	cd toolchain/include/$(CONFIG_TARGET_TRIPLE) && \
 	    find . -type d -exec mkdir -p "$(TOOLCHAIN_INCDIR)/{}" \; && \
 	    find . -type f -name '*.h' -exec $(INSTALL) -m 0644 \
-	    "{}" "$(TOOLCHAIN_INCDIR)/{}" \;
+	    "{}" "$(TOOLCHAIN_INCDIR)/{}"
+ifdef CONFIG_DISABLE_BINDINGS
+	@echo "SKIP bindings installation (disabled via --disable-bindings)"
+else
 	$(INSTALL) -m 0644 bindings/solo5_stub.o $(TOOLCHAIN_LIBDIR)
 	$(INSTALL) -m 0644 bindings/solo5_stub.lds $(TOOLCHAIN_LIBDIR)
 ifdef CONFIG_HVT
@@ -178,6 +181,7 @@ ifdef CONFIG_XEN
 	cd include/xen && \
 	    find . -type f -name '*.h' -exec $(INSTALL) -m 0644 \
 	    "{}" "$(D)/include/solo5/xen/{}" \;
+endif
 endif
 
 .PHONY: install-tenders
