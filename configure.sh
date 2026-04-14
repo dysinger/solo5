@@ -294,6 +294,14 @@ case ${HOST_CC_MACHINE} in
             echo "#undef HAVE_VMM_H" >tenders/hvt/hvt_openbsd_config.h
         fi
         ;;
+    aarch64-apple-darwin*)
+        CONFIG_HOST_ARCH=aarch64 CONFIG_HOST=darwin
+        CONFIG_HVT_TENDER=1
+        ;;
+    x86_64-apple-darwin*)
+        CONFIG_HOST_ARCH=x86_64 CONFIG_HOST=darwin
+        CONFIG_HVT_TENDER=1
+        ;;
     *)
         die "Unsupported host toolchain: ${HOST_CC_MACHINE}"
         ;;
@@ -483,14 +491,22 @@ case ${CONFIG_HOST} in
             die "Using GNU LD is not supported on FreeBSD"
         fi
         ;;
-    OpenBSD)
+OpenBSD)
         TARGET_LD="${TARGET_LD:-ld.lld}"
         TARGET_OBJCOPY="${TARGET_OBJCOPY:-llvm-objcopy}"
         # [LLD] OpenBSD's LLD needs to be explicitly told not to produce PIE
         # executables.
-        TARGET_CC_LDFLAGS="-Wl,-nopie,--no-execute-only"
-        TARGET_LD_LDFLAGS="-nopie --no-execute-only"
+        TARGET_CC_LDFLAGS="-Wl,-npie,--no-execute-only"
+        TARGET_LD_LDFLAGS="-npie --no-execute-only"
         TARGET_CC_CFLAGS="${TARGET_CC_CFLAGS} -fno-emulated-tls"
+        ;;
+    darwin)
+        # Darwin uses the standard system tools
+        TARGET_LD="${TARGET_LD:-ld}"
+        TARGET_OBJCOPY="${TARGET_OBJCOPY:-objcopy}"
+        ;;
+    *)
+        die "Unsupported host system: ${CONFIG_HOST}"
         ;;
     *)
         die "Unsupported host system: ${CONFIG_HOST}"
